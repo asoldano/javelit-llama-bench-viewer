@@ -77,10 +77,13 @@ public class UploadPage {
 
         // Process newly uploaded files
         if (uploadedFiles != null && !uploadedFiles.isEmpty()) {
+            System.out.println("[UPLOAD PAGE] Files uploaded: " + uploadedFiles.size());
             for (JtUploadedFile file : uploadedFiles) {
                 String fileName = file.filename();
                 try {
+                    System.out.println("[UPLOAD PAGE] Parsing file: " + fileName);
                     List<BenchmarkEntry> newEntries = parser.parseJson(new String(file.content()), fileName);
+                    System.out.println("[UPLOAD PAGE] Parsed " + newEntries.size() + " entries from " + fileName);
                     existingBenchmarks.addAll(newEntries);
                     if (!existingFileNames.contains(fileName)) {
                         existingFileNames.add(fileName);
@@ -89,13 +92,24 @@ public class UploadPage {
                     String errorMsg = "Error parsing " + fileName + ": " + e.getMessage();
                     errors.add(errorMsg);
                     existingErrors.add(errorMsg);
+                    System.out.println("[UPLOAD PAGE] Error: " + errorMsg);
                 }
             }
 
             // Update session state
+            System.out.println("[UPLOAD PAGE] Saving to session: " + existingBenchmarks.size() + " total benchmarks");
             state.put("benchmarks", existingBenchmarks);
             state.put("uploadedFileNames", existingFileNames);
             state.put("uploadErrors", existingErrors);
+        } else {
+            System.out.println("[UPLOAD PAGE] No new files uploaded. Existing benchmarks in session: " + (existingBenchmarks != null ? existingBenchmarks.size() : "NULL"));
+        }
+
+        // Debug: show current session state
+        System.out.println("[UPLOAD PAGE] Session state after processing:");
+        for (String key : state.keySet()) {
+            Object val = state.get(key);
+            System.out.println("  - " + key + " -> " + (val == null ? "null" : val.getClass().getSimpleName() + " with " + ((val instanceof List) ? ((List<?>)val).size() : "N/A") + " items"));
         }
 
         // Show upload errors
