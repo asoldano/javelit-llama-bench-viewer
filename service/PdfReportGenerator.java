@@ -21,6 +21,7 @@ public class PdfReportGenerator {
 
     private static final float MARGIN = 50f;
     private static final float PAGE_WIDTH = 612f; // Letter size
+    private static final float PAGE_HEIGHT = 792f; // Letter height
     private static final float LINE_HEIGHT = 14f;
     private static final float SECTION_SPACING = 20f;
 
@@ -75,143 +76,172 @@ public class PdfReportGenerator {
      * Generates a PDF report from the benchmark data.
      */
     public byte[] generateReport(List<BenchmarkEntry> entries, List<String> uploadedFiles, ReportConfig config) throws IOException {
+        System.out.println("=== PDF GENERATION START ===");
+        System.out.println("Entries count: " + entries.size());
+        System.out.println("Uploaded files: " + uploadedFiles);
+
         PDDocument document = new PDDocument();
         PDPage page = new PDPage();
         document.addPage(page);
+        System.out.println("Document and page created");
 
-        PDPageContentStream contentStream = new PDPageContentStream(document, page);
+        PDPageContentStream currentStream = new PDPageContentStream(document, page);
+        System.out.println("Content stream created");
 
-        float yPosition = PAGE_WIDTH - MARGIN; // Start from top (PDF coordinates)
+        float yPosition = PAGE_HEIGHT - MARGIN;
 
         try {
-            // PDFBox 3.x uses Standard14Fonts.FontName enum with constructor
             PDFont fontBold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
             PDFont fontRegular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+            System.out.println("Fonts loaded");
 
-            // Title
-            contentStream.beginText();
-            contentStream.setFont(fontBold, 18);
-            contentStream.setLeading(LINE_HEIGHT);
-            contentStream.newLineAtOffset(MARGIN, yPosition - 20);
-            contentStream.showText(config.getTitle());
-            contentStream.endText();
+            // Use a helper method to write text at absolute position
+            yPosition = writeLine(currentStream, fontBold, 18, MARGIN, yPosition, config.getTitle());
+            System.out.println("Title written: " + config.getTitle());
+            yPosition -= 20;
 
-            yPosition -= 40;
+            yPosition = writeLine(currentStream, fontRegular, 10, MARGIN, yPosition, "Generated: " + Instant.now().toString());
+            System.out.println("Timestamp written");
 
-            // Generation timestamp
-            contentStream.beginText();
-            contentStream.setFont(fontRegular, 10);
-            contentStream.newLineAtOffset(MARGIN, yPosition);
-            contentStream.showText("Generated: " + Instant.now().toString());
-            contentStream.endText();
-
-            yPosition -= LINE_HEIGHT;
-
-            // Uploaded files
-            contentStream.beginText();
-            contentStream.setFont(fontRegular, 10);
-            contentStream.newLineAtOffset(MARGIN, yPosition);
-            contentStream.showText("Source files: " + String.join(", ", uploadedFiles));
-            contentStream.endText();
-
+            yPosition = writeLine(currentStream, fontRegular, 10, MARGIN, yPosition, "Source files: " + String.join(", ", uploadedFiles));
+            System.out.println("Source files written");
             yPosition -= SECTION_SPACING;
+            System.out.println("Y after header: " + yPosition);
 
             // Hardware & Build Summary
             if (config.isIncludeHardwareSummary()) {
-                yPosition = appendHardwareSummary(document, contentStream, entries, yPosition, fontBold, fontRegular);
+                System.out.println("=== Writing Hardware Summary ===");
+                Result hwResult = appendHardwareSummary(document, currentStream, entries, yPosition, fontBold, fontRegular);
+                currentStream = hwResult.stream;
+                yPosition = hwResult.y;
+                System.out.println("Hardware Summary done, Y now: " + yPosition);
             }
 
             // Model Overview
             if (config.isIncludeModelOverview()) {
-                yPosition = appendModelOverview(document, contentStream, entries, yPosition, fontBold, fontRegular);
+                System.out.println("=== Writing Model Overview ===");
+                Result modelResult = appendModelOverview(document, currentStream, entries, yPosition, fontBold, fontRegular);
+                currentStream = modelResult.stream;
+                yPosition = modelResult.y;
+                System.out.println("Model Overview done, Y now: " + yPosition);
             }
 
             // PP Analysis
             if (config.isIncludePPAnalysis()) {
-                yPosition = appendPPAnalysis(document, contentStream, entries, yPosition, fontBold, fontRegular);
+                System.out.println("=== Writing PP Analysis ===");
+                Result ppResult = appendPPAnalysis(document, currentStream, entries, yPosition, fontBold, fontRegular);
+                currentStream = ppResult.stream;
+                yPosition = ppResult.y;
+                System.out.println("PP Analysis done, Y now: " + yPosition);
             }
 
             // TG Analysis
             if (config.isIncludeTGAnalysis()) {
-                yPosition = appendTGAnalysis(document, contentStream, entries, yPosition, fontBold, fontRegular);
+                System.out.println("=== Writing TG Analysis ===");
+                Result tgResult = appendTGAnalysis(document, currentStream, entries, yPosition, fontBold, fontRegular);
+                currentStream = tgResult.stream;
+                yPosition = tgResult.y;
+                System.out.println("TG Analysis done, Y now: " + yPosition);
             }
 
             // Comparison
             if (config.isIncludeComparison()) {
-                yPosition = appendComparison(document, contentStream, entries, yPosition, fontBold, fontRegular);
+                System.out.println("=== Writing Comparison ===");
+                Result compResult = appendComparison(document, currentStream, entries, yPosition, fontBold, fontRegular);
+                currentStream = compResult.stream;
+                yPosition = compResult.y;
+                System.out.println("Comparison done, Y now: " + yPosition);
             }
 
             // Statistical Details
             if (config.isIncludeStatisticalDetails()) {
-                yPosition = appendStatisticalDetails(document, contentStream, entries, yPosition, fontRegular);
+                System.out.println("=== Writing Statistical Details ===");
+                Result statsResult = appendStatisticalDetails(document, currentStream, entries, yPosition, fontRegular);
+                currentStream = statsResult.stream;
+                yPosition = statsResult.y;
+                System.out.println("Statistical Details done, Y now: " + yPosition);
             }
 
             // Notes
             if (config.isIncludeNotes() && config.getNotes() != null && !config.getNotes().isEmpty()) {
-                yPosition = appendNotes(document, contentStream, config.getNotes(), yPosition, fontRegular);
+                System.out.println("=== Writing Notes ===");
+                Result notesResult = appendNotes(document, currentStream, config.getNotes(), yPosition, fontRegular);
+                currentStream = notesResult.stream;
+                yPosition = notesResult.y;
+                System.out.println("Notes done, Y now: " + yPosition);
             }
 
+            System.out.println("=== All sections written ===");
+
+        } catch (Exception e) {
+            System.out.println("ERROR during PDF generation: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         } finally {
-            contentStream.close();
+            currentStream.close();
+            System.out.println("Content stream closed");
         }
 
-        // Save to byte array using ByteArrayOutputStream
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             document.save(baos);
+            System.out.println("Document saved, size: " + baos.size() + " bytes");
             document.close();
             return baos.toByteArray();
         }
     }
 
-    private float appendHardwareSummary(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
-        if (entries.isEmpty()) return y;
+    // Helper to write a line at absolute position
+    private float writeLine(PDPageContentStream cs, PDFont font, float fontSize, float x, float y, String text) throws IOException {
+        cs.beginText();
+        cs.setFont(font, fontSize);
+        cs.newLineAtOffset(x, y);
+        cs.showText(text);
+        cs.endText();
+        return y - LINE_HEIGHT;
+    }
+
+    private static class Result {
+        PDPageContentStream stream;
+        float y;
+        Result(PDPageContentStream s, float y) { this.stream = s; this.y = y; }
+    }
+
+    private Result appendHardwareSummary(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
+        if (entries.isEmpty()) return new Result(cs, y);
 
         y = appendSectionHeader(document, cs, "Hardware & Build Summary", y, fontBold);
+        y -= 5;
 
         BenchmarkEntry sample = entries.get(0);
 
-        cs.beginText();
-        cs.setFont(fontRegular, 10);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText("CPU: " + sample.getCpuInfo());
-        cs.endText();
-        y -= LINE_HEIGHT;
+        String[] lines = {
+            "CPU: " + sample.getCpuInfo(),
+            "GPU: " + sample.getGpuInfo(),
+            "Backend: " + sample.getBackends(),
+            "Build Commit: " + sample.getBuildCommit(),
+            "Build Number: " + sample.getBuildNumber()
+        };
 
-        cs.beginText();
-        cs.setFont(fontRegular, 10);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText("GPU: " + sample.getGpuInfo());
-        cs.endText();
-        y -= LINE_HEIGHT;
+        for (String line : lines) {
+            if (y < MARGIN) {
+                cs.close();
+                PDPage newPage = new PDPage();
+                document.addPage(newPage);
+                cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                y = PAGE_HEIGHT - MARGIN;
+            }
+            writeLine(cs, fontRegular, 10, MARGIN, y, line);
+            y -= LINE_HEIGHT;
+        }
 
-        cs.beginText();
-        cs.setFont(fontRegular, 10);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText("Backend: " + sample.getBackends());
-        cs.endText();
-        y -= LINE_HEIGHT;
-
-        cs.beginText();
-        cs.setFont(fontRegular, 10);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText("Build Commit: " + sample.getBuildCommit());
-        cs.endText();
-        y -= LINE_HEIGHT;
-
-        cs.beginText();
-        cs.setFont(fontRegular, 10);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText("Build Number: " + sample.getBuildNumber());
-        cs.endText();
-        y -= LINE_HEIGHT - SECTION_SPACING;
-
-        return y;
+        return new Result(cs, y - SECTION_SPACING);
     }
 
-    private float appendModelOverview(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
-        if (entries.isEmpty()) return y;
+    private Result appendModelOverview(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
+        if (entries.isEmpty()) return new Result(cs, y);
 
         y = appendSectionHeader(document, cs, "Model Overview", y, fontBold);
+        y -= 5;
 
         Set<String> modelTypes = new LinkedHashSet<>();
         for (BenchmarkEntry e : entries) {
@@ -228,33 +258,34 @@ public class PdfReportGenerator {
                 }
             }
 
-            cs.beginText();
-            cs.setFont(fontRegular, 10);
-            cs.newLineAtOffset(x, y);
+            if (y < MARGIN) {
+                cs.close();
+                PDPage newPage = new PDPage();
+                document.addPage(newPage);
+                cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                y = PAGE_HEIGHT - MARGIN;
+            }
+
             String line = "- " + model + " (" + FormattingUtils.formatModelSize(sample.getModelSize()) + ", " +
                     FormattingUtils.formatParams(sample.getModelNParams()) + ")";
-            cs.showText(line);
-            cs.endText();
+            writeLine(cs, fontRegular, 10, x, y, line);
             y -= LINE_HEIGHT;
         }
 
-        y -= SECTION_SPACING - LINE_HEIGHT;
-        return y;
+        return new Result(cs, y - SECTION_SPACING);
     }
 
-    private float appendPPAnalysis(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
+    private Result appendPPAnalysis(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
         y = appendSectionHeader(document, cs, "Prompt Processing (PP) Analysis", y, fontBold);
-        y = appendSummaryTable(document, cs, entries, "PP", y, fontRegular);
-        return y;
+        return appendSummaryTable(document, cs, entries, "PP", y, fontRegular);
     }
 
-    private float appendTGAnalysis(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
+    private Result appendTGAnalysis(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
         y = appendSectionHeader(document, cs, "Token Generation (TG) Analysis", y, fontBold);
-        y = appendSummaryTable(document, cs, entries, "TG", y, fontRegular);
-        return y;
+        return appendSummaryTable(document, cs, entries, "TG", y, fontRegular);
     }
 
-    private float appendComparison(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
+    private Result appendComparison(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontBold, PDFont fontRegular) throws IOException {
         y = appendSectionHeader(document, cs, "Performance Comparison", y, fontBold);
 
         // Create a summary by model and depth
@@ -267,108 +298,99 @@ public class PdfReportGenerator {
             comparisonData.get(model).put(depth, e);
         }
 
-        cs.beginText();
-        cs.setFont(fontRegular, 10);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText("Throughput comparison across context depths:");
-        cs.endText();
-        y -= LINE_HEIGHT;
+        y = writeLine(cs, fontRegular, 10, MARGIN, y, "Throughput comparison across context depths:");
 
         for (Map.Entry<String, Map<Integer, BenchmarkEntry>> e : comparisonData.entrySet()) {
             String model = e.getKey();
             Map<Integer, BenchmarkEntry> depths = e.getValue();
 
-            cs.beginText();
-            cs.setFont(fontBold, 10);
-            cs.newLineAtOffset(MARGIN + 20, y);
-            cs.showText(model);
-            cs.endText();
-            y -= LINE_HEIGHT;
+            y = writeLine(cs, fontBold, 10, MARGIN + 20, y, model);
 
             for (Map.Entry<Integer, BenchmarkEntry> d : depths.entrySet()) {
                 int depth = d.getKey();
                 BenchmarkEntry entry = d.getValue();
 
                 String line = "  Depth " + depth + ": PP=" + FormattingUtils.formatThroughput(entry.getAvgTs());
-                cs.beginText();
-                cs.setFont(fontRegular, 9);
-                cs.newLineAtOffset(MARGIN + 30, y);
-                cs.showText(line);
-                cs.endText();
-                y -= LINE_HEIGHT;
+                if (y < MARGIN) {
+                    cs.close();
+                    PDPage newPage = new PDPage();
+                    document.addPage(newPage);
+                    cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                    y = PAGE_HEIGHT - MARGIN;
+                }
+                y = writeLine(cs, fontRegular, 9, MARGIN + 30, y, line);
             }
+
+            y -= SECTION_SPACING;
         }
 
-        y -= SECTION_SPACING - LINE_HEIGHT;
-        return y;
+        return new Result(cs, y);
     }
 
-    private float appendStatisticalDetails(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontRegular) throws IOException {
-        if (entries.isEmpty()) return y;
+    private Result appendStatisticalDetails(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, float y, PDFont fontRegular) throws IOException {
+        if (entries.isEmpty()) return new Result(cs, y);
 
         PDFont fontBold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
         y = appendSectionHeader(document, cs, "Statistical Details", y, fontBold);
 
         for (BenchmarkEntry e : entries) {
+            if (y < MARGIN) {
+                cs.close();
+                PDPage newPage = new PDPage();
+                document.addPage(newPage);
+                cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                y = PAGE_HEIGHT - MARGIN;
+            }
+
             String line = e.getModelType() + " [" + e.getTestType() + ", d=" + e.getnDepth() +
                     "]: avg=" + FormattingUtils.formatThroughput(e.getAvgTs()) +
                     ", stddev=" + FormattingUtils.formatThroughput(e.getStddevTs());
 
-            cs.beginText();
-            cs.setFont(fontRegular, 9);
-            cs.newLineAtOffset(MARGIN, y);
-            cs.showText(line);
-            cs.endText();
-            y -= LINE_HEIGHT;
-
-            if (y < MARGIN) {
-                // Add new page
-                PDPage newPage = new PDPage();
-                document.addPage(newPage);
-                cs.close();
-                cs = new PDPageContentStream(document, newPage);
-                y = PAGE_WIDTH - MARGIN;
-            }
+            y = writeLine(cs, fontRegular, 9, MARGIN, y, line);
         }
 
-        return y;
+        return new Result(cs, y);
     }
 
-    private float appendNotes(PDDocument document, PDPageContentStream cs, String notes, float y, PDFont fontRegular) throws IOException {
+    private Result appendNotes(PDDocument document, PDPageContentStream cs, String notes, float y, PDFont fontRegular) throws IOException {
         PDFont fontBold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
         y = appendSectionHeader(document, cs, "Notes", y, fontBold);
 
         // Simple word wrapping
         String[] words = notes.split(" ");
-        StringBuilder line = new StringBuilder();
+        StringBuilder lineBuilder = new StringBuilder();
 
         for (String word : words) {
-            if (line.length() + word.length() > 80) {
-                cs.beginText();
-                cs.setFont(fontRegular, 10);
-                cs.newLineAtOffset(MARGIN, y);
-                cs.showText(line.toString());
-                cs.endText();
-                y -= LINE_HEIGHT;
-                line = new StringBuilder();
+            if (lineBuilder.length() + word.length() > 80) {
+                if (y < MARGIN) {
+                    cs.close();
+                    PDPage newPage = new PDPage();
+                    document.addPage(newPage);
+                    cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                    y = PAGE_HEIGHT - MARGIN;
+                }
+                y = writeLine(cs, fontRegular, 10, MARGIN, y, lineBuilder.toString());
+                lineBuilder = new StringBuilder();
             }
-            if (line.length() > 0) line.append(" ");
-            line.append(word);
+            if (lineBuilder.length() > 0) lineBuilder.append(" ");
+            lineBuilder.append(word);
         }
 
-        if (line.length() > 0) {
-            cs.beginText();
-            cs.setFont(fontRegular, 10);
-            cs.newLineAtOffset(MARGIN, y);
-            cs.showText(line.toString());
-            cs.endText();
-            y -= LINE_HEIGHT;
+        if (lineBuilder.length() > 0) {
+            if (y < MARGIN) {
+                cs.close();
+                PDPage newPage = new PDPage();
+                document.addPage(newPage);
+                cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                y = PAGE_HEIGHT - MARGIN;
+            }
+            y = writeLine(cs, fontRegular, 10, MARGIN, y, lineBuilder.toString());
         }
 
-        return y;
+        return new Result(cs, y);
     }
 
-    private float appendSummaryTable(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, String testType, float y, PDFont fontRegular) throws IOException {
+    private Result appendSummaryTable(PDDocument document, PDPageContentStream cs, List<BenchmarkEntry> entries, String testType, float y, PDFont fontRegular) throws IOException {
         List<BenchmarkEntry> filtered = new ArrayList<>();
         for (BenchmarkEntry e : entries) {
             if (testType.equals(e.getTestType())) {
@@ -377,12 +399,7 @@ public class PdfReportGenerator {
         }
 
         if (filtered.isEmpty()) {
-            cs.beginText();
-            cs.setFont(fontRegular, 10);
-            cs.newLineAtOffset(MARGIN, y);
-            cs.showText("No " + testType + " data available.");
-            cs.endText();
-            return y - LINE_HEIGHT;
+            return new Result(cs, writeLine(cs, fontRegular, 10, MARGIN, y, "No " + testType + " data available.") - LINE_HEIGHT);
         }
 
         // Sort by model and depth
@@ -390,36 +407,33 @@ public class PdfReportGenerator {
                 .thenComparingInt(BenchmarkEntry::getnDepth));
 
         for (BenchmarkEntry e : filtered) {
+            if (y < MARGIN) {
+                cs.close();
+                PDPage newPage = new PDPage();
+                document.addPage(newPage);
+                cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+                y = PAGE_HEIGHT - MARGIN;
+            }
+
             String line = "- " + e.getModelFilename().substring(e.getModelFilename().lastIndexOf('/') + 1) +
                     ": depth=" + e.getnDepth() +
                     ", throughput=" + FormattingUtils.formatThroughput(e.getAvgTs()) +
                     ", stddev=" + FormattingUtils.formatThroughput(e.getStddevTs());
 
-            cs.beginText();
-            cs.setFont(fontRegular, 9);
-            cs.newLineAtOffset(MARGIN, y);
-            cs.showText(line);
-            cs.endText();
-            y -= LINE_HEIGHT;
-
-            if (y < MARGIN) {
-                PDPage newPage = new PDPage();
-                document.addPage(newPage);
-                cs.close();
-                cs = new PDPageContentStream(document, newPage);
-                y = PAGE_WIDTH - MARGIN;
-            }
+            y = writeLine(cs, fontRegular, 9, MARGIN, y, line);
         }
 
-        return y - SECTION_SPACING + LINE_HEIGHT;
+        return new Result(cs, y - SECTION_SPACING + LINE_HEIGHT);
     }
 
     private float appendSectionHeader(PDDocument document, PDPageContentStream cs, String title, float y, PDFont fontBold) throws IOException {
-        cs.beginText();
-        cs.setFont(fontBold, 12);
-        cs.newLineAtOffset(MARGIN, y);
-        cs.showText(title);
-        cs.endText();
-        return y - LINE_HEIGHT - 5;
+        if (y < MARGIN) {
+            cs.close();
+            PDPage newPage = new PDPage();
+            document.addPage(newPage);
+            cs = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true, true);
+            y = PAGE_HEIGHT - MARGIN;
+        }
+        return writeLine(cs, fontBold, 12, MARGIN, y, title) + LINE_HEIGHT + 5;
     }
 }
